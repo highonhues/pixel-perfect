@@ -1,4 +1,4 @@
-# Microscopy Image Preprocessor
+# Pixel Perfect: Microscopy Image Preprocessor
 
 A web-based tool for enhancing biological microscopy images with real-time processing controls.
 
