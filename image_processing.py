@@ -27,39 +27,77 @@ def clahe(img, clip_lmt=2.0, tile_size=8):
 
 
 def median_filter(img, kernel_size=3):
-    """Removed salt and pepepr noise"""
-
+    """Removed salt and pepper noise"""
     # check kernel size to be odd
-    if kernel_size % 2 ==0:
-        kernel_size +=1
+    if kernel_size % 2 == 0:
+        kernel_size += 1
     return cv2.medianBlur(img, kernel_size)
 
 
-def correct_illumination(img, sigma=50):
-    """Fix uneven illumination by smoothening and obtaining the background and subtracting it."""
-    
-    # Estimate background with extreme blur
-    background= cv2.GaussianBlur(img, (0,0), sigma)
-    corrected= cv2.subtract(img, background)
-
-    # Subtract background and normalise it
+def bilateral_filter(img, sigma_spatial=5):
+    """Edge-preserving smoothing using bilateral filter"""
+    # d: diameter of pixel neighborhood (0 means compute from sigma)
+    # sigmaColor: filter sigma in color space (same as spatial for simplicity)
+    # sigmaSpace: filter sigma in coordinate space
     if img.dtype == np.uint16:
-        correctfin = cv2.normalize(corrected, None, 0, 65535, cv2.NORM_MINMAX)
+        # For 16-bit images, normalize to 8-bit, apply filter, then scale back
+        img_8bit = (img / 256).astype(np.uint8)
+        filtered = cv2.bilateralFilter(img_8bit, 0, sigma_spatial * 10, sigma_spatial)
+        return (filtered.astype(np.uint16) * 256)
     else:
-        correctfin = cv2.normalize(corrected, None, 0, 255, cv2.NORM_MINMAX)
-    
-    return correctfin
+        return cv2.bilateralFilter(img, 0, sigma_spatial * 10, sigma_spatial)
+
+
+def correct_illumination(img, sigma=50):
+    """Fix uneven illumination - works for fluorescence microscopy with dark backgrounds."""
+
+    # Estimate background with extreme blur
+    background = cv2.GaussianBlur(img, (0, 0), sigma)
+
+    # Convert to float for safe operations
+    img_float = img.astype(np.float32)
+    background_float = background.astype(np.float32)
+
+    # Subtract the blurred background to remove uneven illumination
+    # Add the mean to preserve overall brightness
+    mean_val = np.mean(background_float)
+    corrected = img_float - background_float + mean_val
+
+    # Clip to valid range
+    corrected = np.clip(corrected, 0, None)
+
+    # Convert back to original data type
+    if img.dtype == np.uint16:
+        corrected = np.clip(corrected, 0, 65535).astype(np.uint16)
+    else:
+        corrected = np.clip(corrected, 0, 255).astype(np.uint8)
+
+    return corrected
 
 def rolling_ball_bg(img, radius=50):
-    """Rolling ball algortihm to estimate background intensity"""    
+    """Rolling ball algorithm to estimate and remove background intensity"""
     # Create circular structuring element
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (radius, radius))
-    
-    #morphological opening of rolling ball
-    background= cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel)
-    
-    # Subtract background
-    return cv2.subtract(img, background)
+
+    # Morphological opening for rolling ball
+    background = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel)
+
+    # Convert to float for safe subtraction
+    img_float = img.astype(np.float32)
+    background_float = background.astype(np.float32)
+
+    # Subtract background and clip to avoid negative values
+    corrected = np.clip(img_float - background_float, 0, None)
+
+    # Normalize to preserve dynamic range
+    if img.dtype == np.uint16:
+        corrected = cv2.normalize(corrected, None, 0, 65535, cv2.NORM_MINMAX)
+        corrected = corrected.astype(np.uint16)
+    else:
+        corrected = cv2.normalize(corrected, None, 0, 255, cv2.NORM_MINMAX)
+        corrected = corrected.astype(np.uint8)
+
+    return corrected
 
 
 # Qua;ity Metrics
@@ -90,6 +128,55 @@ def calculate_quality_metrics(image):
         'dynamic_range': float(dynamic_range)
     }
 
+def intensity_to_params(img, clahe_int, illum_int, rolling_int, gauss_int, median_int, bilateral_int):
+    """Convert intensity values (0-100) from sliders to actual parameter values.
+
+    Args:
+        img: Input image
+        clahe_int: CLAHE intensity (0-100)
+        illum_int: Illumination correction intensity (0-100)
+        rolling_int: Rolling ball intensity (0-100)
+        gauss_int: Gaussian denoise intensity (0-100)
+        median_int: Median filter intensity (0-100)
+        bilateral_int: Bilateral filter intensity (0-100)
+
+    Returns:
+        Dictionary of parameters
+    """
+    height, width = img.shape[:2]
+
+    # CLAHE: intensity controls clip limit (0.01 to 0.05)
+    # As per specs
+    clahe_clip = 0.01 + (clahe_int / 100.0) * 0.04
+    clahe_tile = max(8, min(16, width // 40))
+
+    # Illumination: intensity controls disk radius (10 to 100)
+    # Map to sigma for our gaussian-based illumination correction
+    illum_sigma = 10 + (illum_int / 100.0) * 90
+
+    # Background subtraction (rolling ball): radius (10 to 100)
+    rolling_radius = int(10 + (rolling_int / 100.0) * 90)
+
+    # Gaussian: sigma (0.5 to 5.0)
+    gauss_sigma = 0.5 + (gauss_int / 100.0) * 4.5
+
+    # Median: kernel size (3 to 11, odd numbers only)
+    median_kernel = int(3 + (median_int / 100.0) * 4) * 2 + 1  # Maps to 3, 5, 7, 9, 11
+
+    # Bilateral: sigma_spatial (1 to 10)
+    bilateral_sigma = 1 + (bilateral_int / 100.0) * 9
+
+    return {
+        'clahe_clip': clahe_clip,
+        'clahe_tile': clahe_tile,
+        'illum_sigma': illum_sigma,
+        'rolling_radius': rolling_radius,
+        'gauss_sigma': gauss_sigma,
+        'median_kernel': median_kernel,
+        'bilateral_sigma': bilateral_sigma
+    }
+
+
 def auto_detect_params(img):
     """Automatically detect the optimal params based on image stats.
     NOTE:Heuristic auto tuner based off of literature conventions to test if it works"""
@@ -99,34 +186,34 @@ def auto_detect_params(img):
     height, width = img.shape[:2]
     contrast =std / (mean + 1e-10)
     
-    # CLAHE params
-    if contrast < 0.3:
-        clip_lmt = 3.0  #contrast how hence higher enhancement
-    elif contrast < 0.5:
-        clip_lmt = 2.5
+    # CLAHE params - more conservative
+    if contrast < 0.2:
+        clip_lmt = 2.0  # Low contrast needs enhancement
+    elif contrast < 0.4:
+        clip_lmt = 1.5
     else:
-        clip_lmt = 2.0
+        clip_lmt = 1.2  # Already good contrast, gentle enhancement
+
+    tile_size = max(8, min(16, width // 40))  # scale with image size, smaller tiles
+
+    # Illum correction sigma - larger values = gentler correction
+    sigma_illum = max(80, min(200, width // 8))
+
+    # Rolling ball - smaller radius = more local correction
+    radius = max(30, min(80, width // 25))
     
-    tile_size = max(4, min(32, width // 32))  # scale with image size
-    
-    # Illum correction sigma
-    sigma_illum = max(50, min(150, width // 10))
-    
-    # I came in like a Rolling ball 
-    radius =max(20, min(100, width// 20))
-    
-    #gaussian sigma
+    # Gaussian sigma - more conservative to avoid over-blurring
     snr = mean / (std + 1e-10)
     if snr < 5:
-        sigma_gauss = 1.5  # Noisy directly prop to smoothing
+        sigma_gauss = 1.0  # Even noisy images, gentle smoothing
     elif snr < 10:
-        sigma_gauss = 1.2
+        sigma_gauss = 0.8
     else:
-        sigma_gauss = 1.0
+        sigma_gauss = 0.5  # Good quality, minimal smoothing
 
-    #Median filter kernel
+    # Median filter kernel - keep small to preserve detail
     if snr < 8:
-        kernel_median = 5 
+        kernel_median = 3  # Smaller kernel preserves more detail
     else:
         kernel_median = 3
     
@@ -140,13 +227,26 @@ def auto_detect_params(img):
     }
     
 
-# Fin pipeline 
-def preprocess_image(img, use_clahe=False, use_illum=False,use_rolling=False,
-                     use_gauss=False, use_median=False, auto_params=True,params=None ):
-    
+# Fin pipeline
+def preprocess_image(img, use_clahe=False, use_illum=False, use_rolling=False,
+                     use_gauss=False, use_median=False, use_bilateral=False,
+                     auto_params=True, params=None):
+    """Apply the whole preprocessing pipeline to your image.
 
-    """Apply the whole preprocessing pipeline to your image ARGS AND OUTPUT FOR ALL TBD Ill write soon"""  
-    
+    Args:
+        img: Input image (grayscale)
+        use_clahe: Enable CLAHE enhancement
+        use_illum: Enable illumination correction
+        use_rolling: Enable rolling ball background subtraction
+        use_gauss: Enable Gaussian smoothing
+        use_median: Enable median filter
+        use_bilateral: Enable bilateral filter
+        auto_params: Use automatic parameter detection
+        params: Custom parameters dictionary
+
+    Returns:
+        Tuple of (processed_image, metrics_before, metrics_after, used_params)
+    """
     result = img.copy()
     metrics_before = calculate_quality_metrics(img)
 
@@ -154,28 +254,31 @@ def preprocess_image(img, use_clahe=False, use_illum=False,use_rolling=False,
     if auto_params:
         use_params = auto_detect_params(img)
     else:
-        use_params = params if params else {} 
-    
+        use_params = params if params else {}
+
     if use_clahe:
-        result = clahe(result, 
-                       clip_lmt=use_params.get('clahe_clip', 2.0), 
+        result = clahe(result,
+                       clip_lmt=use_params.get('clahe_clip', 2.0),
                        tile_size=use_params.get('clahe_tile', 8))
-    
+
     if use_illum:
         result = correct_illumination(result, sigma=use_params.get('illum_sigma', 50))
-    
+
     if use_rolling:
         result = rolling_ball_bg(result, radius=use_params.get('rolling_radius', 50))
-    
+
     if use_gauss:
         result = gaussian_denoise(result, sigma=use_params.get('gauss_sigma', 1.0))
-    
+
     if use_median:
         result = median_filter(result, kernel_size=use_params.get('median_kernel', 3))
-    
+
+    if use_bilateral:
+        result = bilateral_filter(result, sigma_spatial=use_params.get('bilateral_sigma', 5))
+
     # Get metrics after processing
     metrics_after = calculate_quality_metrics(result)
-    
+
     return result, metrics_before, metrics_after, use_params
 
 #Real iamges
@@ -212,26 +315,26 @@ def load_image(filepath, return_colour_info=False):
     return image
 
 
-def process_channel(channel, use_clahe=False, use_illum=False, 
-                    use_rolling=False, use_gauss=False, use_median=False,
+def process_channel(channel, use_clahe=False, use_illum=False,
+                    use_rolling=False, use_gauss=False, use_median=False, use_bilateral=False,
                     auto_params=True, params=None):
     """
     Process a single channel (grayscale image) which is same as preprocess_image but for one channel only
     """
-    return preprocess_image(channel, use_clahe, use_illum, use_rolling, 
-                          use_gauss, use_median, auto_params,params)
+    return preprocess_image(channel, use_clahe, use_illum, use_rolling,
+                          use_gauss, use_median, use_bilateral, auto_params, params)
 
 
 def preprocess_colour_image(image, use_clahe=False, use_illum=False,
-                           use_rolling=False, use_gauss=False, use_median=False,
+                           use_rolling=False, use_gauss=False, use_median=False, use_bilateral=False,
                            auto_params=True, params=None):
     """
     Process a colour image by processing each channel separately
-    
+
     Args:
         image: Input image (can be grayscale or colour)
         [other args same as preprocess_image]
-        
+
     Returns:
         If grayscale: same as preprocess_image
         If color: (processed_color_image, metrics_before, metrics_after, used_params)
@@ -239,31 +342,31 @@ def preprocess_colour_image(image, use_clahe=False, use_illum=False,
     # If grayscale, use normal pipeline
     if len(image.shape) == 2:
         return preprocess_image(image, use_clahe, use_illum, use_rolling,
-                               use_gauss, use_median, auto_params, params)
-    
+                               use_gauss, use_median, use_bilateral, auto_params, params)
+
     # If colour, process each channel separately
     channels = cv2.split(image)
     processed_channels = []
-    
+
     print(f"Processing {len(channels)} channels separately:-")
-    
+
     for i, channel in enumerate(channels):
         print(f"Channel: {i+1}/{len(channels)}")
         processed, _, _, _ = preprocess_image(
             channel, use_clahe, use_illum, use_rolling,
-            use_gauss, use_median, auto_params, params
+            use_gauss, use_median, use_bilateral, auto_params, params
         )
         processed_channels.append(processed)
-    
+
     # Merge channels back
     result = cv2.merge(processed_channels)
-    
+
     # Calculate metrics on first channel (or average)
     metrics_before = calculate_quality_metrics(channels[0])
     metrics_after = calculate_quality_metrics(processed_channels[0])
-    
+
     used_params = auto_detect_params(channels[0]) if auto_params else (params or {})
-    
+
     return result, metrics_before, metrics_after, used_params
 
 

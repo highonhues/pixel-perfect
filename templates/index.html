@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microscopy Image Preprocessor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: #ffffff;
+            padding: 15px;
+            line-height: 1.3;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Header - Compact */
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 500;
+            color: #222;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 13px;
+            color: #666;
+        }
+
+        /* Upload Section - Single Line */
+        .upload-section {
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+
+        .upload-section form {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type="file"] {
+            font-size: 13px;
+        }
+
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            font-size: 13px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        button:hover {
+            background: #0052a3;
+        }
+
+        .process-btn {
+            background: #28a745;
+            padding: 10px 40px;
+            font-size: 14px;
+        }
+
+        .process-btn:hover {
+            background: #218838;
+        }
+
+        .reset-btn {
+            background: #dc3545;
+            padding: 10px 40px;
+            font-size: 14px;
+            margin-left: 15px;
+        }
+
+        .reset-btn:hover {
+            background: #c82333;
+        }
+
+        /* Images Section - Horizontal Layout */
+        .images-section {
+            margin-bottom: 20px;
+        }
+
+        .images-container {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 15px;
+        }
+
+        .image-box {
+            text-align: center;
+        }
+
+        .image-box h3 {
+            font-size: 14px;
+            font-weight: 500;
+            color: #444;
+            margin-bottom: 8px;
+        }
+
+        .image-wrapper {
+            width: 400px;
+            height: 300px;
+            border: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fafafa;
+        }
+
+        .image-wrapper img {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+        }
+
+
+        /* Metrics - Compact */
+        .metrics-line {
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            margin: 15px 0;
+        }
+
+        .metrics-line span {
+            margin: 0 15px;
+        }
+
+        .download-section {
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        .download-btn {
+            background: #28a745;
+            font-size: 12px;
+            padding: 6px 16px;
+        }
+
+        /* Controls Section - Compact Grid */
+        .controls-section {
+            margin-top: 30px;
+            padding-top: 25px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .controls-section h3 {
+            font-size: 16px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px 30px;
+            margin-bottom: 25px;
+        }
+
+        .control-item {
+            height: 70px;
+        }
+
+        .control-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 3px;
+        }
+
+        .control-header input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .control-header label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #222;
+            cursor: pointer;
+        }
+
+        .control-description {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 5px;
+            margin-left: 24px;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 24px;
+        }
+
+        input[type="range"] {
+            width: 180px;
+            height: 4px;
+            background: #ddd;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #0066cc;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #0066cc;
+            cursor: pointer;
+            border: none;
+        }
+
+        input[type="range"]:disabled {
+            opacity: 0.3;
+        }
+
+        .slider-value {
+            font-size: 12px;
+            color: #0066cc;
+            font-weight: 600;
+            min-width: 25px;
+        }
+
+        .process-button-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            display: none;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #0066cc;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading .spinner {
+            display: block;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1024px) {
+            .controls-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Microscopy Image Preprocessor</h1>
+            <p>Automatically enhance and normalize biological microscopy images</p>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="upload-section">
+            <form action="/upload" method="post" enctype="multipart/form-data">
+                <input type="file" name="file" accept=".png,.jpg,.jpeg,.tif,.tiff" required id="fileInput">
+                <button type="submit">Upload Image</button>
+            </form>
+        </div>
+
+        {% if uploaded %}
+        <!-- Images Section -->
+        <div class="images-section">
+            <div class="images-container">
+                <!-- Original Image -->
+                <div class="image-box">
+                    <h3>Original</h3>
+                    <div class="image-wrapper">
+                        <img src="{{ original_path }}" alt="Original" id="originalImg">
+                    </div>
+                </div>
+
+                <!-- Processed Image -->
+                <div class="image-box">
+                    <h3>Processed</h3>
+                    <div class="image-wrapper">
+                        {% if processed %}
+                        <img src="{{ processed_path }}" alt="Processed" id="processedImg">
+                        {% else %}
+                        <span style="color: #999; font-size: 12px;">No processing applied yet</span>
+                        {% endif %}
+                    </div>
+                    {% if processed %}
+                    <div class="download-section">
+                        <a href="/download/{{ processed_filename }}">
+                            <button class="download-btn">Download Processed Image</button>
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Metrics Line -->
+            {% if processed %}
+            <div class="metrics-line">
+                <span>Contrast: {{ "%.4f"|format(metrics_after.contrast) }} ({{ "+%.1f%%"|format((metrics_after.contrast - metrics_before.contrast) / metrics_before.contrast * 100) if metrics_before.contrast > 0 else "N/A" }})</span>
+                <span>SNR: {{ "%.2f"|format(metrics_after.snr) }} dB</span>
+                <span>Sharpness: {{ "%.1f"|format(metrics_after.sharpness) }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Controls Section -->
+        <div class="controls-section">
+            <h3>Preprocessing Controls</h3>
+            <form action="/process" method="post" id="processingForm">
+                <input type="hidden" name="filename" value="{{ filename }}">
+
+                <div class="controls-grid">
+                    <!-- CLAHE -->
+                    <div class="control-item">
+                        <div class="control-header">
+                            <input type="checkbox" name="use_clahe" id="clahe_check" onchange="toggleSlider('clahe')" {% if form_state and form_state.use_clahe %}checked{% endif %}>
+                            <label for="clahe_check">CLAHE Enhancement</label>
+                        </div>
+                        <div class="control-description">Improves local contrast</div>
+                        <div class="slider-container">
+                            <input type="range" name="clahe_intensity" id="clahe_slider" min="0" max="100" value="{{ form_state.clahe_intensity if form_state else 50 }}" {% if not form_state or not form_state.use_clahe %}disabled{% endif %} oninput="updateValue('clahe', this.value)">
+                            <span class="slider-value" id="clahe_value">{{ form_state.clahe_intensity if form_state else 50 }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Illumination -->
+                    <div class="control-item">
+                        <div class="control-header">
+                            <input type="checkbox" name="use_illum" id="illum_check" onchange="toggleSlider('illum')" {% if form_state and form_state.use_illum %}checked{% endif %}>
+                            <label for="illum_check">Illumination Correction</label>
+                        </div>
+                        <div class="control-description">Removes uneven lighting</div>
+                        <div class="slider-container">
+                            <input type="range" name="illum_intensity" id="illum_slider" min="0" max="100" value="{{ form_state.illum_intensity if form_state else 50 }}" {% if not form_state or not form_state.use_illum %}disabled{% endif %} oninput="updateValue('illum', this.value)">
+                            <span class="slider-value" id="illum_value">{{ form_state.illum_intensity if form_state else 50 }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Background Subtraction -->
+                    <div class="control-item">
+                        <div class="control-header">
+                            <input type="checkbox" name="use_rolling" id="rolling_check" onchange="toggleSlider('rolling')" {% if form_state and form_state.use_rolling %}checked{% endif %}>
+                            <label for="rolling_check">Background Subtraction</label>
+                        </div>
+                        <div class="control-description">Eliminates background signal</div>
+                        <div class="slider-container">
+                            <input type="range" name="rolling_intensity" id="rolling_slider" min="0" max="100" value="{{ form_state.rolling_intensity if form_state else 50 }}" {% if not form_state or not form_state.use_rolling %}disabled{% endif %} oninput="updateValue('rolling', this.value)">
+                            <span class="slider-value" id="rolling_value">{{ form_state.rolling_intensity if form_state else 50 }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Gaussian -->
+                    <div class="control-item">
+                        <div class="control-header">
+                            <input type="checkbox" name="use_gauss" id="gauss_check" onchange="toggleSlider('gauss')" {% if form_state and form_state.use_gauss %}checked{% endif %}>
+                            <label for="gauss_check">Gaussian Smoothing</label>
+                        </div>
+                        <div class="control-description">Reduces random noise</div>
+                        <div class="slider-container">
+                            <input type="range" name="gauss_intensity" id="gauss_slider" min="0" max="100" value="{{ form_state.gauss_intensity if form_state else 50 }}" {% if not form_state or not form_state.use_gauss %}disabled{% endif %} oninput="updateValue('gauss', this.value)">
+                            <span class="slider-value" id="gauss_value">{{ form_state.gauss_intensity if form_state else 50 }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Median -->
+                    <div class="control-item">
+                        <div class="control-header">
+                            <input type="checkbox" name="use_median" id="median_check" onchange="toggleSlider('median')" {% if form_state and form_state.use_median %}checked{% endif %}>
+                            <label for="median_check">Median Filter</label>
+                        </div>
+                        <div class="control-description">Removes salt-and-pepper noise</div>
+                        <div class="slider-container">
+                            <input type="range" name="median_intensity" id="median_slider" min="0" max="100" value="{{ form_state.median_intensity if form_state else 50 }}" {% if not form_state or not form_state.use_median %}disabled{% endif %} oninput="updateValue('median', this.value)">
+                            <span class="slider-value" id="median_value">{{ form_state.median_intensity if form_state else 50 }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Bilateral -->
+                    <div class="control-item">
+                        <div class="control-header">
+                            <input type="checkbox" name="use_bilateral" id="bilateral_check" onchange="toggleSlider('bilateral')" {% if form_state and form_state.use_bilateral %}checked{% endif %}>
+                            <label for="bilateral_check">Bilateral Filter</label>
+                        </div>
+                        <div class="control-description">Edge-preserving smoothing</div>
+                        <div class="slider-container">
+                            <input type="range" name="bilateral_intensity" id="bilateral_slider" min="0" max="100" value="{{ form_state.bilateral_intensity if form_state else 50 }}" {% if not form_state or not form_state.use_bilateral %}disabled{% endif %} oninput="updateValue('bilateral', this.value)">
+                            <span class="slider-value" id="bilateral_value">{{ form_state.bilateral_intensity if form_state else 50 }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="process-button-container">
+                    <button type="submit" class="process-btn">Process Image</button>
+                    <button type="button" class="reset-btn" onclick="resetSettings()">Reset All</button>
+                </div>
+            </form>
+
+            <div class="spinner" id="loadingSpinner"></div>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        function toggleSlider(name) {
+            const checkbox = document.getElementById(name + '_check');
+            const slider = document.getElementById(name + '_slider');
+            slider.disabled = !checkbox.checked;
+        }
+
+        function updateValue(name, value) {
+            document.getElementById(name + '_value').textContent = value;
+        }
+
+        function resetSettings() {
+            // Uncheck all checkboxes and reset sliders
+            const checkboxes = ['clahe', 'illum', 'rolling', 'gauss', 'median', 'bilateral'];
+            checkboxes.forEach(name => {
+                const checkbox = document.getElementById(name + '_check');
+                const slider = document.getElementById(name + '_slider');
+                const valueDisplay = document.getElementById(name + '_value');
+
+                checkbox.checked = false;
+                slider.value = 50;
+                slider.disabled = true;
+                valueDisplay.textContent = '50';
+            });
+
+            // Submit the form to clear the processed image (with all checkboxes unchecked)
+            document.getElementById('processingForm').submit();
+        }
+
+        // Show loading spinner on form submit
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('processingForm');
+            if (form) {
+                form.addEventListener('submit', function() {
+                    document.getElementById('loadingSpinner').style.display = 'block';
+                });
+            }
+        });
+    </script>
+</body>
+</html>
