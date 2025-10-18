@@ -90,6 +90,196 @@ def calculate_quality_metrics(image):
         'dynamic_range': float(dynamic_range)
     }
 
+def auto_detect_params(img):
+    """Automatically detect the optimal params based on image stats.
+    NOTE:Heuristic auto tuner based off of literature conventions to test if it works"""
+
+    mean = np.mean(img)
+    std = np.std(img)
+    height, width = img.shape[:2]
+    contrast =std / (mean + 1e-10)
+    
+    # CLAHE params
+    if contrast < 0.3:
+        clip_lmt = 3.0  #contrast how hence higher enhancement
+    elif contrast < 0.5:
+        clip_lmt = 2.5
+    else:
+        clip_lmt = 2.0
+    
+    tile_size = max(4, min(32, width // 32))  # scale with image size
+    
+    # Illum correction sigma
+    sigma_illum = max(50, min(150, width // 10))
+    
+    # I came in like a Rolling ball 
+    radius =max(20, min(100, width// 20))
+    
+    #gaussian sigma
+    snr = mean / (std + 1e-10)
+    if snr < 5:
+        sigma_gauss = 1.5  # Noisy directly prop to smoothing
+    elif snr < 10:
+        sigma_gauss = 1.2
+    else:
+        sigma_gauss = 1.0
+
+    #Median filter kernel
+    if snr < 8:
+        kernel_median = 5 
+    else:
+        kernel_median = 3
+    
+    return {
+        'clahe_clip': clip_lmt,
+        'clahe_tile': tile_size,
+        'illum_sigma': sigma_illum,
+        'rolling_radius': radius,
+        'gauss_sigma' : sigma_gauss,
+        'median_kernel' : kernel_median
+    }
+    
+
+# Fin pipeline 
+def preprocess_image(img, use_clahe=False, use_illum=False,use_rolling=False,
+                     use_gauss=False, use_median=False, auto_params=True,params=None ):
+    
+
+    """Apply the whole preprocessing pipeline to your image ARGS AND OUTPUT FOR ALL TBD Ill write soon"""  
+    
+    result = img.copy()
+    metrics_before = calculate_quality_metrics(img)
+
+    # Get params
+    if auto_params:
+        use_params = auto_detect_params(img)
+    else:
+        use_params = params if params else {} 
+    
+    if use_clahe:
+        result = clahe(result, 
+                       clip_lmt=use_params.get('clahe_clip', 2.0), 
+                       tile_size=use_params.get('clahe_tile', 8))
+    
+    if use_illum:
+        result = correct_illumination(result, sigma=use_params.get('illum_sigma', 50))
+    
+    if use_rolling:
+        result = rolling_ball_bg(result, radius=use_params.get('rolling_radius', 50))
+    
+    if use_gauss:
+        result = gaussian_denoise(result, sigma=use_params.get('gauss_sigma', 1.0))
+    
+    if use_median:
+        result = median_filter(result, kernel_size=use_params.get('median_kernel', 3))
+    
+    # Get metrics after processing
+    metrics_after = calculate_quality_metrics(result)
+    
+    return result, metrics_before, metrics_after, use_params
+
+#Real iamges
+def load_image(filepath, return_colour_info=False):
+    """
+    Load an image file (supports TIFF, PNG, JPG)
+    
+    Args:
+    filepath: Path to image file
+    return_colour_info: If True returns image, is_colour, num_channels
+        
+    Returns: Image as numpy array
+    """
+    image =cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
+    
+    if image is None:
+        raise ValueError(f"Could not load image: {filepath}")
+    
+    # Grayscale is 1 channel
+    # Colour is 3 channels
+    #Colour with alpha 4 channels
+    is_colour = len(image.shape) == 3
+    num_channels = image.shape[2] if is_colour else 1 
+    
+    print(f"Loaded: {filepath}")
+    print(f"Shape: {image.shape}")
+    print(f"Dtype: {image.dtype}")
+    print(f"Colour: {'Present' if is_colour else 'No'}")
+    if is_colour:
+        print(f"Channels: {num_channels}")
+    
+    if return_colour_info:
+        return image, is_colour,num_channels
+    return image
+
+
+def process_channel(channel, use_clahe=False, use_illum=False, 
+                    use_rolling=False, use_gauss=False, use_median=False,
+                    auto_params=True, params=None):
+    """
+    Process a single channel (grayscale image) which is same as preprocess_image but for one channel only
+    """
+    return preprocess_image(channel, use_clahe, use_illum, use_rolling, 
+                          use_gauss, use_median, auto_params,params)
+
+
+def preprocess_colour_image(image, use_clahe=False, use_illum=False,
+                           use_rolling=False, use_gauss=False, use_median=False,
+                           auto_params=True, params=None):
+    """
+    Process a colour image by processing each channel separately
+    
+    Args:
+        image: Input image (can be grayscale or colour)
+        [other args same as preprocess_image]
+        
+    Returns:
+        If grayscale: same as preprocess_image
+        If color: (processed_color_image, metrics_before, metrics_after, used_params)
+    """
+    # If grayscale, use normal pipeline
+    if len(image.shape) == 2:
+        return preprocess_image(image, use_clahe, use_illum, use_rolling,
+                               use_gauss, use_median, auto_params, params)
+    
+    # If colour, process each channel separately
+    channels = cv2.split(image)
+    processed_channels = []
+    
+    print(f"Processing {len(channels)} channels separately:-")
+    
+    for i, channel in enumerate(channels):
+        print(f"Channel: {i+1}/{len(channels)}")
+        processed, _, _, _ = preprocess_image(
+            channel, use_clahe, use_illum, use_rolling,
+            use_gauss, use_median, auto_params, params
+        )
+        processed_channels.append(processed)
+    
+    # Merge channels back
+    result = cv2.merge(processed_channels)
+    
+    # Calculate metrics on first channel (or average)
+    metrics_before = calculate_quality_metrics(channels[0])
+    metrics_after = calculate_quality_metrics(processed_channels[0])
+    
+    used_params = auto_detect_params(channels[0]) if auto_params else (params or {})
+    
+    return result, metrics_before, metrics_after, used_params
+
+
+def save_image(image, filepath):
+    """
+    Save an image to file.
+    
+    Args:
+        image: Numpy array
+        filepath: Output path
+    """
+    cv2.imwrite(filepath, image)
+    print(f"Saved: {filepath}")
+
+
+
 
 ### test features
 
@@ -175,6 +365,48 @@ def test_features():
     print("Metrics of Rolling ball algo pics:\n")
     for key, val in Rolling_metrics.items():
         print(f"     {key}: {val:.4f}")
+
+    # Auto Parameter Detection
+    print("Testing Auto Param detection")
+    auto_params = auto_detect_params(test_image)
+    print("Auto-detected parameters:")
+    for key, val in auto_params.items():
+        print(f"  {key}: {val}")
+    print()
+
+    # Test Pipeline
+    print("Testing Processing Pipeline...")
+    processed, before, after, use_params = preprocess_image(
+        test_image,use_clahe=True,use_illum=True,use_gauss=True,auto_params=True
+    )
+    cv2.imwrite(os.path.join(test_results_dir, 'test_pipeline.png'), processed)
+    print("Saved test_pipeline.png")
+    
+    print("\nPipeline metrics before:")
+    for key, val in before.items():
+        print(f"{key}: {val:.4f}")
+    
+    print("\nPipeline metrics after:")
+    for key, val in after.items():
+        print(f"{key}: {val:.4f}")
+    print()
+
+    #colour Image Processing
+    print("Testing colour img processing:-")
+    colour_image = np.random.randint(50, 200, (512, 512, 3), dtype=np.uint8)
+    cv2.imwrite(os.path.join(test_results_dir, 'test_color_input.png'), colour_image)
+    
+    processed_colour, _, _, _ = preprocess_colour_image(
+        colour_image,
+        use_clahe=True,
+        use_gauss=True,
+        auto_params=True
+    )
+    cv2.imwrite(os.path.join(test_results_dir, 'test_colour_output.png'), processed_colour)
+    print("Saved test_colour_input.png and test_colour_output.png\n")
+
+    print("All tests complete!")
+    print(f"Check the {test_results_dir} folder for results")
 
 
 if __name__ == "__main__":
